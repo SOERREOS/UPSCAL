@@ -1162,8 +1162,38 @@ h1 {
 }
 
 .download-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(170px, 1fr));
   justify-content: flex-end;
-  min-width: min(100%, 360px);
+  min-width: min(100%, 720px);
+}
+
+.download-card {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  min-height: 138px;
+  padding: 18px;
+  border-radius: 8px;
+}
+
+.download-card svg {
+  width: 34px;
+  height: 34px;
+}
+
+.download-card span {
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.download-card small {
+  flex-basis: auto;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  opacity: 0.72;
+  text-align: left;
 }
 
 .local-link {
@@ -1236,6 +1266,10 @@ footer {
 
   .download-actions small {
     text-align: left;
+  }
+
+  .download-actions {
+    grid-template-columns: 1fr;
   }
 
   .workflow {
