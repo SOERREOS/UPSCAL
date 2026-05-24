@@ -2,6 +2,11 @@ name: Build macOS
 
 "on":
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Optional release tag to upload assets to, for example v0.1.0"
+        required: false
+        type: string
   push:
     tags:
       - "v*"
@@ -40,7 +45,7 @@ jobs:
 
   release-macos:
     name: Upload macOS release assets
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.release_tag != ''
     needs: build-macos
     runs-on: ubuntu-latest
     permissions:
@@ -60,12 +65,13 @@ jobs:
       - name: Merge update manifest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.inputs.release_tag || github.ref_name }}
         run: |
           set -euo pipefail
           mkdir -p dist_release
-          gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1 || \
-            gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --title "${GITHUB_REF_NAME}" --notes ""
-          gh release download "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --pattern latest.json --dir dist_release >/dev/null 2>&1 || true
+          gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1 || \
+            gh release create "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --title "${RELEASE_TAG}" --notes ""
+          gh release download "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --pattern latest.json --dir dist_release >/dev/null 2>&1 || true
           python - <<'PY'
           import hashlib
           import json
@@ -76,9 +82,9 @@ jobs:
           root = pathlib.Path(".")
           text = (root / "app_qt.py").read_text(encoding="utf-8")
           match = re.search(r'APP_VERSION\s*=\s*"([^"]+)"', text)
-          version = match.group(1) if match else os.environ["GITHUB_REF_NAME"].removeprefix("v")
+          version = match.group(1) if match else os.environ["RELEASE_TAG"].removeprefix("v")
           repo = os.environ["GITHUB_REPOSITORY"]
-          tag = os.environ["GITHUB_REF_NAME"]
+          tag = os.environ["RELEASE_TAG"]
           manifest_path = pathlib.Path("dist_release/latest.json")
 
           if manifest_path.exists():
@@ -120,4 +126,5 @@ jobs:
       - name: Upload release assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${GITHUB_REF_NAME}" dist_release/UPSCAL_macOS_*.zip dist_release/latest.json --repo "${GITHUB_REPOSITORY}" --clobber
+          RELEASE_TAG: ${{ github.event.inputs.release_tag || github.ref_name }}
+        run: gh release upload "${RELEASE_TAG}" dist_release/UPSCAL_macOS_*.zip dist_release/latest.json --repo "${GITHUB_REPOSITORY}" --clobber
