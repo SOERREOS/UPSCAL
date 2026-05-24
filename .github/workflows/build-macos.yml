@@ -1,0 +1,123 @@
+name: Build macOS
+
+"on":
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-macos:
+    name: Build macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-15-intel
+          - arch: arm64
+            runner: macos-15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Build app
+        run: bash build_mac.sh
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: UPSCAL-macOS-${{ matrix.arch }}
+          path: dist_mac/UPSCAL_macOS_*.zip
+
+  release-macos:
+    name: Upload macOS release assets
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build-macos
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: UPSCAL-macOS-*
+          path: dist_release
+          merge-multiple: true
+
+      - name: Merge update manifest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist_release
+          gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1 || \
+            gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --title "${GITHUB_REF_NAME}" --notes ""
+          gh release download "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --pattern latest.json --dir dist_release >/dev/null 2>&1 || true
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import re
+
+          root = pathlib.Path(".")
+          text = (root / "app_qt.py").read_text(encoding="utf-8")
+          match = re.search(r'APP_VERSION\s*=\s*"([^"]+)"', text)
+          version = match.group(1) if match else os.environ["GITHUB_REF_NAME"].removeprefix("v")
+          repo = os.environ["GITHUB_REPOSITORY"]
+          tag = os.environ["GITHUB_REF_NAME"]
+          manifest_path = pathlib.Path("dist_release/latest.json")
+
+          if manifest_path.exists():
+              try:
+                  manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+              except json.JSONDecodeError:
+                  manifest = {}
+          else:
+              manifest = {}
+
+          if not isinstance(manifest, dict):
+              manifest = {}
+          manifest["version"] = version
+          manifest.setdefault("notes_ko", "")
+          manifest.setdefault("notes_en", "")
+
+          platforms = manifest.get("platforms")
+          if not isinstance(platforms, dict):
+              platforms = {}
+
+          for archive in sorted(pathlib.Path("dist_release").glob("UPSCAL_macOS_*_v*.zip")):
+              if "_arm64_" in archive.name:
+                  key = "macos-arm64"
+              elif "_x64_" in archive.name:
+                  key = "macos-x64"
+              else:
+                  continue
+              digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+              platforms[key] = {
+                  "version": version,
+                  "url": f"https://github.com/{repo}/releases/download/{tag}/{archive.name}",
+                  "sha256": digest,
+              }
+
+          manifest["platforms"] = platforms
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          PY
+
+      - name: Upload release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${GITHUB_REF_NAME}" dist_release/UPSCAL_macOS_*.zip dist_release/latest.json --repo "${GITHUB_REPOSITORY}" --clobber

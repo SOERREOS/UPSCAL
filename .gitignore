@@ -1,0 +1,31 @@
+# Python / local environment
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+venv_new/
+
+# Build output
+build/
+build_tmp/
+build_tmp_app/
+build_tmp_mac/
+dist/
+dist_app/
+dist_installer/
+dist_mac/
+*.spec
+
+# Downloaded model weights
+models/*.pth
+models/*.download
+
+# Local logs and temp files
+*.log
+null
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
